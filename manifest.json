@@ -1,0 +1,9 @@
+﻿{
+  "name": "PAYMENT · Credenciales IT",
+  "short_name": "CredIT",
+  "start_url": "/Credenciales-IT/",
+  "display": "standalone",
+  "background_color": "#060d1a",
+  "theme_color": "#14b8a6",
+  "icons": [{ "src": "icon.png", "sizes": "192x192" }]
+}
