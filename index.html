@@ -273,14 +273,24 @@ table.data-table td{ padding:10px 12px; border-bottom:1px solid var(--border); }
   width:280px; background:#fff; color:#111; border-radius:var(--r-lg); padding:20px; text-align:center;
   margin:0 auto; box-shadow:var(--shadow-md);
 }
-.cred-print .logo{ font-size:11px; font-weight:800; letter-spacing:1px; color:#0d9488; margin-bottom:8px; }
-.cred-print .photo{ width:64px;height:64px; border-radius:50%; object-fit:cover; margin:0 auto 8px; display:block; border:2px solid #eee; }
-.cred-print .qr-wrap{ display:flex; justify-content:center; margin:12px 0; }
-.cred-print .cid{ font-family:'Courier New',monospace; font-size:11px; color:#000; letter-spacing:1px; }
+.cred-print .logo{ font-size:11px; font-weight:800; letter-spacing:1.5px; color:#0d9488; margin-bottom:6px; }
+.cred-print .cred-title{ font-size:13px; font-weight:700; margin:2px 0; letter-spacing:.3px; color:#111; }
+.cred-print .photo{
+  width:120px; height:140px; border-radius:6px; object-fit:cover; margin:8px auto 6px; display:block; border:1px solid #ddd;
+}
+.cred-print .name{ font-size:14px; font-weight:700; margin:4px 0 2px; color:#111; }
+.cred-print .equipo-sub{ font-size:11px; color:#555; }
+.cred-print .qr-wrap{ display:flex; justify-content:center; margin:6px 0 4px; }
+.cred-print .qr-wrap svg, .cred-print .qr-wrap img, .cred-print .qr-wrap canvas{ width:110px; height:110px; }
+.cred-print .cid{ font-family:'Courier New',monospace; font-size:9px; color:#000; letter-spacing:1.5px; font-weight:700; }
 @media print{
   body *{ visibility:hidden; }
   .cred-print, .cred-print *{ visibility:visible; }
-  .cred-print{ position:absolute; top:0; left:0; box-shadow:none; max-width:75mm; }
+  .cred-print{
+    position:absolute; top:0; left:0; box-shadow:none; max-width:75mm !important; padding:8mm !important;
+    border:none !important; margin:0 auto !important;
+  }
+  .cred-print .cred-title{ font-size:11pt !important; }
 }
 
 /* Empty / util */
@@ -305,10 +315,10 @@ table.data-table td{ padding:10px 12px; border-bottom:1px solid var(--border); }
     <p class="sub">Ingresá tu nombre y PIN de administrador para continuar.</p>
     <div id="lockout-box" class="lockout-box hidden"></div>
     <form id="login-form" autocomplete="off">
-      <div class="field" id="f-nombre">
-        <label for="in-nombre">Nombre</label>
-        <input id="in-nombre" type="text" maxlength="60" required>
-        <div class="err-msg">Ingresá tu nombre.</div>
+      <div class="field" id="f-usuario">
+        <label for="in-usuario">Usuario</label>
+        <input id="in-usuario" type="text" maxlength="40" autocapitalize="off" placeholder="tu.usuario" required>
+        <div class="err-msg">Ingresá tu usuario.</div>
       </div>
       <div class="field" id="f-pin">
         <label for="in-pin">PIN</label>
@@ -328,6 +338,7 @@ table.data-table td{ padding:10px 12px; border-bottom:1px solid var(--border); }
       <button class="tab-btn active" data-tab="dashboard" role="tab">📊 Dashboard</button>
       <button class="tab-btn" data-tab="credenciales" role="tab">🪪 Credenciales</button>
       <button class="tab-btn" data-tab="inventario" role="tab">📦 Inventario</button>
+      <button class="tab-btn" data-tab="usuarios" role="tab">👤 Usuarios</button>
     </nav>
     <div class="presence-bar" id="presence-bar"></div>
     <div class="top-actions">
@@ -396,6 +407,19 @@ table.data-table td{ padding:10px 12px; border-bottom:1px solid var(--border); }
         </div>
       </div>
     </section>
+
+    <!-- USUARIOS -->
+    <section id="view-usuarios" class="view">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Usuarios de IT</h2>
+          <button class="btn btn-primary" id="btn-new-user">＋ Nuevo usuario</button>
+        </div>
+        <ul class="cred-list" id="user-list">
+          <li class="empty-state">Ingresá el PIN maestro para ver la lista.</li>
+        </ul>
+      </div>
+    </section>
   </main>
 
   <div class="bulk-bar" id="bulk-bar">
@@ -417,9 +441,20 @@ table.data-table td{ padding:10px 12px; border-bottom:1px solid var(--border); }
 ══════════════════════════════════════════════════════════ */
 const SUPABASE_URL = "https://xwbzagfyioommxalialq.supabase.co";
 const SUPABASE_KEY = "sb_publishable_wcnhCVAVfWhCUECAabsW8A_aPcgQxmz";
-const ADMIN_PIN    = "Paymentsa@CDE"; // ⚠️ ver nota de seguridad al final de la respuesta
+// El PIN ya NO vive en este archivo. Se verifica en una Supabase Edge Function
+// (ver supabase/functions/verify-pin/index.ts) para que no quede legible con "Ver código fuente".
+const VERIFY_PIN_URL = `${SUPABASE_URL}/functions/v1/verify-pin`;
+const MANAGE_USERS_URL = `${SUPABASE_URL}/functions/v1/manage-users`;
 const SB = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type':'application/json' };
 const PAGE_SIZE = 50;
+
+/* Identificador de dispositivo (no de identidad) sólo para que el server
+   pueda contar intentos fallidos y aplicar el lockout por origen. */
+function getDeviceId(){
+  let id = localStorage.getItem('it_device_id');
+  if(!id){ id = crypto.randomUUID(); localStorage.setItem('it_device_id', id); }
+  return id;
+}
 const AVATAR_COLORS = ['#14b8a6','#f59e0b','#ef4444','#8b5cf6','#3b82f6','#22c55e','#ec4899','#0ea5e9'];
 
 /* ══════════════════════════════════════════════════════════
@@ -600,26 +635,27 @@ function reactivarModal(cred, onSubmit){
 /* ══════════════════════════════════════════════════════════
    SESSION / AUTH  (PIN lockout, session expiry, currentUser freeze)
 ══════════════════════════════════════════════════════════ */
-const LOCKOUT_KEY = 'it_lockout';
-const LOCKOUT_MS = 5 * 60 * 1000;
-const MAX_ATTEMPTS = 5;
-let currentUser = null;
-
-function getLockout(){
-  try{ return JSON.parse(localStorage.getItem(LOCKOUT_KEY)) || { attempts:0, until:0 }; }
-  catch{ return { attempts:0, until:0 }; }
+const MAX_ATTEMPTS = 5; // debe coincidir con el valor configurado en la Edge Function
+// El lockout ahora lo decide el servidor (tabla login_attempts). Sólo cacheamos
+// localmente el último "locked_until" que nos devolvió, para pintar la cuenta
+// regresiva sin tener que golpear la función a cada rato.
+const LOCKOUT_CACHE_KEY = 'it_lockout_cache';
+function getLockoutCache(){
+  try{ return JSON.parse(localStorage.getItem(LOCKOUT_CACHE_KEY)) || { locked_until:0 }; }
+  catch{ return { locked_until:0 }; }
 }
-function setLockout(v){ localStorage.setItem(LOCKOUT_KEY, JSON.stringify(v)); }
+function setLockoutCache(v){ localStorage.setItem(LOCKOUT_CACHE_KEY, JSON.stringify(v)); }
+let currentUser = null;
 
 function renderLockoutState(){
   const box = document.getElementById('lockout-box');
-  const state = getLockout();
-  const remaining = state.until - Date.now();
+  const { locked_until } = getLockoutCache();
+  const remaining = (locked_until || 0) - Date.now();
   if(remaining > 0){
     box.classList.remove('hidden');
     document.getElementById('login-btn').disabled = true;
     const tick = () => {
-      const r = getLockout().until - Date.now();
+      const r = getLockoutCache().locked_until - Date.now();
       if(r <= 0){
         box.classList.add('hidden');
         document.getElementById('login-btn').disabled = false;
@@ -640,40 +676,47 @@ renderLockoutState();
 
 document.getElementById('login-form').addEventListener('submit', async e => {
   e.preventDefault();
-  const nameField = document.getElementById('f-nombre');
+  const userField = document.getElementById('f-usuario');
   const pinField = document.getElementById('f-pin');
-  const name = document.getElementById('in-nombre').value.trim();
+  const username = document.getElementById('in-usuario').value.trim();
   const pin = document.getElementById('in-pin').value;
-  nameField.classList.toggle('invalid', !name);
-  nameField.classList.toggle('valid', !!name);
-  if(!name) return;
+  userField.classList.toggle('invalid', !username);
+  userField.classList.toggle('valid', !!username);
+  if(!username) return;
 
-  const state = getLockout();
-  if(state.until > Date.now()){ renderLockoutState(); return; }
+  if(getLockoutCache().locked_until > Date.now()){ renderLockoutState(); return; }
 
   const btn = document.getElementById('login-btn');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Verificando...';
-  await sleep(250);
 
-  if(pin !== ADMIN_PIN){
-    const attempts = state.attempts + 1;
-    if(attempts >= MAX_ATTEMPTS){
-      setLockout({ attempts, until: Date.now() + LOCKOUT_MS });
-      toast('Bloqueado por 5 minutos tras 5 intentos fallidos', 'error');
-    }else{
-      setLockout({ attempts, until: 0 });
-      toast(`PIN incorrecto (${attempts}/${MAX_ATTEMPTS})`, 'error');
+  try{
+    const res = await retryFetch(VERIFY_PIN_URL, {
+      method: 'POST',
+      headers: { ...SB },
+      body: JSON.stringify({ username, pin, device_id: getDeviceId() })
+    }, 2);
+    const data = await res.json();
+
+    if(!res.ok || !data.ok){
+      if(data.locked_until) setLockoutCache({ locked_until: data.locked_until });
+      const msg = data.locked_until
+        ? 'Bloqueado por intentos fallidos'
+        : `Usuario o PIN incorrecto${typeof data.attempts === 'number' ? ` (${data.attempts}/${MAX_ATTEMPTS})` : ''}`;
+      toast(msg, 'error');
+      pinField.classList.add('invalid');
+      btn.disabled = false; btn.innerHTML = 'Ingresar';
+      renderLockoutState();
+      return;
     }
-    pinField.classList.add('invalid');
-    btn.disabled = false; btn.innerHTML = 'Ingresar';
-    renderLockoutState();
-    return;
-  }
 
-  setLockout({ attempts:0, until:0 });
-  currentUser = Object.freeze({ nombre: name, loginAt: Date.now() });
-  sessionStorage.setItem('it_user', JSON.stringify(currentUser));
-  enterApp();
+    setLockoutCache({ locked_until: 0 });
+    currentUser = Object.freeze({ nombre: data.display_name || username, username, loginAt: Date.now() });
+    sessionStorage.setItem('it_user', JSON.stringify(currentUser));
+    enterApp();
+  }catch(err){
+    toast('No se pudo verificar el PIN — revisá tu conexión', 'error');
+    btn.disabled = false; btn.innerHTML = 'Ingresar';
+  }
 });
 
 function enterApp(){
@@ -709,6 +752,7 @@ function resetInactivityTimer(){
 );
 function logout(){
   currentUser = null;
+  adminPinCache = null;
   sessionStorage.removeItem('it_user');
   document.getElementById('app').classList.add('hidden');
   document.getElementById('login-view').classList.remove('hidden');
@@ -868,6 +912,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('view-' + btn.dataset.tab).classList.add('active');
+    if(btn.dataset.tab === 'usuarios') loadUserList();
   });
 });
 
@@ -1284,9 +1329,12 @@ function showPrintableCred(c){
     <div class="modal-body">
       <div class="cred-print" id="print-target">
         <div class="logo">PAYMENT · IT</div>
-        ${c.foto ? `<img class="photo" src="${c.foto}" alt="">` : `<div class="photo" style="display:flex;align-items:center;justify-content:center;background:#eee;font-weight:700;">${esc(initials(c.responsable))}</div>`}
-        <div style="font-weight:700;font-size:14px;">${esc(c.responsable)}</div>
-        <div style="font-size:11px;color:#555;">${esc(c.equipo||'')}</div>
+        <div class="cred-title">CREDENCIAL DE RETIRO</div>
+        ${c.foto
+          ? `<img class="photo" src="${c.foto}" alt="">`
+          : `<div class="photo" style="display:flex;align-items:center;justify-content:center;background:#eee;font-weight:700;font-size:20px;">${esc(initials(c.responsable))}</div>`}
+        <div class="name">${esc(c.responsable)}</div>
+        <div class="equipo-sub">${esc(c.equipo||'')}</div>
         <div class="qr-wrap"><div id="qr-box"></div></div>
         <div class="cid">${esc(c.id)}</div>
       </div>
@@ -1296,13 +1344,15 @@ function showPrintableCred(c){
       <button class="btn btn-secondary" id="print-download">⬇️ Descargar imagen</button>
       <button class="btn btn-primary" id="print-print">🖨️ Imprimir</button>
     </div>`, root => {
-    try{ new QRCode(root.querySelector('#qr-box'), { text: String(c.id), width: 300, height: 300 }); }
+    // Genera el QR con resolución interna alta (300px) pero visualmente se
+    // muestra a 110px vía CSS — así queda nítido tanto en pantalla como impreso.
+    try{ new QRCode(root.querySelector('#qr-box'), { text: String(c.id), width: 300, height: 300, correctLevel: QRCode.CorrectLevel.H }); }
     catch{ root.querySelector('#qr-box').textContent = '[QR no disponible]'; }
     root.querySelector('#print-close').addEventListener('click', closeModal);
     root.querySelector('#print-print').addEventListener('click', () => window.print());
     root.querySelector('#print-download').addEventListener('click', async () => {
       try{
-        const canvas = await html2canvas(root.querySelector('#print-target'), { scale: 4 });
+        const canvas = await html2canvas(root.querySelector('#print-target'), { scale: 4, backgroundColor: '#ffffff' });
         const a = document.createElement('a');
         a.download = `credencial_${c.responsable}.png`;
         a.href = canvas.toDataURL('image/png');
@@ -1412,6 +1462,111 @@ async function batchUpsertInventory(rows){
   await loadInventory();
   renderInventory();
 }
+
+/* ══════════════════════════════════════════════════════════
+   USUARIOS DE IT — listar, crear, desactivar (gated con PIN maestro)
+   El PIN maestro nunca se guarda en localStorage/sessionStorage — sólo
+   se cachea en memoria mientras dura la pestaña abierta.
+══════════════════════════════════════════════════════════ */
+let adminPinCache = null;
+
+function ensureAdminPin(callback){
+  if(adminPinCache){ callback(adminPinCache); return; }
+  inputModal('PIN maestro requerido', 'PIN maestro de IT', pin => {
+    if(!pin){ toast('Se necesita el PIN maestro para esta acción', 'warning'); return; }
+    adminPinCache = pin;
+    callback(pin);
+  });
+}
+
+async function callManageUsers(action, extra = {}){
+  return new Promise((resolve) => {
+    ensureAdminPin(async pin => {
+      try{
+        const res = await retryFetch(MANAGE_USERS_URL, {
+          method: 'POST', headers: { ...SB },
+          body: JSON.stringify({ action, admin_pin: pin, ...extra })
+        }, 2);
+        const data = await res.json();
+        if(!res.ok || !data.ok){
+          if(res.status === 401) adminPinCache = null; // PIN maestro incorrecto — pedirlo de nuevo la próxima vez
+          toast(data.error || 'No se pudo completar la acción', 'error');
+          resolve(null);
+          return;
+        }
+        resolve(data);
+      }catch{
+        toast('Error de conexión con el servidor', 'error');
+        resolve(null);
+      }
+    });
+  });
+}
+
+async function loadUserList(){
+  const list = document.getElementById('user-list');
+  const data = await callManageUsers('list');
+  if(!data){ return; }
+  if(!data.users.length){
+    list.innerHTML = `<li class="empty-state">Todavía no hay usuarios adicionales creados.</li>`;
+    return;
+  }
+  list.innerHTML = data.users.map(u => `
+    <li class="cred-item">
+      <div class="avatar" style="background:${colorFor(u.username)}">${esc(initials(u.display_name))}</div>
+      <div class="ci-main">
+        <div class="ci-name">${esc(u.display_name)} <span class="mono" style="color:var(--muted);font-size:11px;">@${esc(u.username)}</span></div>
+        <div class="ci-sub">${u.active ? 'Activo' : 'Desactivado'} · creado ${fmtDate(u.created_at)}</div>
+      </div>
+      ${u.active ? `<span class="badge ok">ACTIVO</span>` : `<span class="badge no">INACTIVO</span>`}
+      ${u.active ? `<button class="icon-btn" data-deactivate="${esc(u.username)}" aria-label="Desactivar usuario">⛔</button>` : ''}
+    </li>`).join('');
+  list.querySelectorAll('[data-deactivate]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const username = btn.dataset.deactivate;
+      confirmModal('Desactivar usuario', `${username} ya no va a poder ingresar a la plataforma.`, async () => {
+        const res = await callManageUsers('deactivate', { username });
+        if(res){ toast('Usuario desactivado', 'success'); loadUserList(); }
+      }, true);
+    });
+  });
+}
+
+document.getElementById('btn-new-user').addEventListener('click', () => {
+  openModal(`
+    <div class="modal-head"><h3>Nuevo usuario de IT</h3></div>
+    <div class="modal-body">
+      <div class="field" id="nu-f-nombre"><label>Nombre completo *</label><input id="nu-nombre" maxlength="60"><div class="err-msg">Campo requerido</div></div>
+      <div class="field" id="nu-f-usuario"><label>Usuario (para login) *</label><input id="nu-usuario" maxlength="40" autocapitalize="off"><div class="err-msg">Campo requerido</div></div>
+      <div class="field" id="nu-f-pin"><label>PIN (mín. 4 caracteres) *</label><input id="nu-pin" type="password" maxlength="30"><div class="err-msg">Mínimo 4 caracteres</div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="nu-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="nu-submit">Crear usuario</button>
+    </div>`, root => {
+    root.querySelector('#nu-cancel').addEventListener('click', closeModal);
+    root.querySelector('#nu-submit').addEventListener('click', async () => {
+      const display_name = root.querySelector('#nu-nombre').value.trim();
+      const username = root.querySelector('#nu-usuario').value.trim().toLowerCase();
+      const pin = root.querySelector('#nu-pin').value;
+      let ok = true;
+      root.querySelector('#nu-f-nombre').classList.toggle('invalid', !display_name); if(!display_name) ok = false;
+      root.querySelector('#nu-f-usuario').classList.toggle('invalid', !username); if(!username) ok = false;
+      root.querySelector('#nu-f-pin').classList.toggle('invalid', pin.length < 4); if(pin.length < 4) ok = false;
+      if(!ok){ toast('Completá todos los campos correctamente', 'warning'); return; }
+      const btnEl = root.querySelector('#nu-submit');
+      btnEl.disabled = true; btnEl.innerHTML = '<span class="spinner"></span> Creando...';
+      const res = await callManageUsers('create', { username, display_name, pin });
+      if(res){
+        toast(`Usuario ${username} creado`, 'success');
+        closeModal();
+        loadUserList();
+      }else{
+        btnEl.disabled = false; btnEl.innerHTML = 'Crear usuario';
+      }
+    });
+  });
+});
 
 /* ══════════════════════════════════════════════════════════
    KEYBOARD SHORTCUTS
